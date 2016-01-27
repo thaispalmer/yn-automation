@@ -1,0 +1,14 @@
+{
+  "name": "yn-automation",
+  "version": "0.0.1",
+  "description": "YourNode Automation Script",
+  "main": "yn-automation.js",
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/yournode/yn-automation.git"
+  },
+  "author": "YourNode",
+  "dependencies": {
+    "fs": "0.0.2"
+  }
+}
