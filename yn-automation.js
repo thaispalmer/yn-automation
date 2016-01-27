@@ -25,8 +25,8 @@ var defaults = {
 // Helper functions
 var helper = {
     proxyReload: function () {
-        var spawn = require('child_process').spawn;
-        var response = spawnSync('nginx', ['-s', 'reload']);
+        var spawn = require('child_process');
+        var response = spawn.spawnSync('nginx', ['-s', 'reload']);
         if (response.status === 0) console.log('[OK] Proxy reloaded');
         else console.log('[Error] A problem with the proxy ocurred: ' + response.stderr);
     }
