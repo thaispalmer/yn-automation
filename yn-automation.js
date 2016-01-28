@@ -13,22 +13,61 @@ stop <appName>
 */
 
 var fs = require("fs");
+var spawn = require('child_process');
 
 // Automation default values
 var defaults = {
     baseApplicationPath: '/home/yournode/',
     serverIP: '127.0.0.1',
     proxyAvailable: '/etc/nginx/apps-available/',
-    proxyEnabled: '/etc/nginx/apps-enabled/'
+    proxyEnabled: '/etc/nginx/apps-enabled/',
+    servicePath: '/etc/systemd/system/yn_',
+    nodeExec: '/usr/bin/env node'
 }
 
 // Helper functions
 var helper = {
+    checkIfExists: function (path) {
+        if (typeof fs.accessSync !== 'undefined') check = fs.accessSync(path);
+        else check = fs.existsSync(path);
+        return check;
+    },
     proxyReload: function () {
-        var spawn = require('child_process');
         var response = spawn.spawnSync('nginx', ['-s', 'reload']);
         if (response.status === 0) console.log('[OK] Proxy reloaded');
-        else console.log('[Error] A problem with the proxy ocurred: ' + response.stderr);
+        else {
+            console.log('[Error] A problem with the proxy ocurred: ' + response.stderr);
+            process.error(1);
+        }
+    },
+    systemdHelper: function (params, successMessage) {
+        var response = spawn.spawnSync('systemctl', params);
+        if (response.status === 0) console.log('[OK] ' + successMessage);
+        else {
+            console.log('[Error] A problem with the systemd ocurred: ' + response.stderr);
+            process.error(1);
+        }
+    },
+    npmInstall: function () {
+        var response = spawn.spawnSync('npm', ['install']);
+        if (response.status === 0) console.log('[OK] NPM Packages installed successfully.');
+        else {
+            console.log('[Error] A problem with the NPM ocurred: ' + response.stderr);
+            process.error(1);
+        }
+    },
+    deleteFolderRecursive: function (path) {
+        if (helper.checkIfExists(path)) {
+            fs.readdirSync(path).forEach(function(file,index) {
+                var curPath = path + "/" + file;
+                if (fs.lstatSync(curPath).isDirectory()) {
+                    helper.deleteFolderRecursive(curPath);
+                } else {
+                    fs.unlinkSync(curPath);
+                }
+            });
+            fs.rmdirSync(path);
+        }
     }
 }
 
@@ -51,8 +90,10 @@ var app = {
         // TODO: Sync Application's Path, Ports and Custom Domain in database
         var applicationPath = defaults.baseApplicationPath + appName;
         var applicationPort = 10000; // TODO: Retrieve from the port pool
-        if (fs.accessSync(applicationPath)) {
+
+        if (helper.checkIfExists(applicationPath)) {
             console.log('[Error] Directory already exists');
+            process.exit(1);
         }
         fs.mkdirSync(applicationPath,0755);
         console.log('[OK] Create application directory');
@@ -89,6 +130,47 @@ var app = {
 
         console.log('-- Updating application --');
         console.log('Application name: ' + appName);
+
+        var packagePath = defaults.baseApplicationPath + appName + '/package.json';
+
+        // Read package.json to see the main script to run
+        if (helper.checkIfExists(packagePath)) {
+            var applicationPort = 10000; // TODO: Retrieve from the app meta on db
+
+            var contents = fs.readFileSync(packagePath);
+            var jsonContent = JSON.parse(contents);
+            var mainApplication = defaults.baseApplicationPath + appName + "/" + jsonContent.main;
+            console.log('[OK] Read main script from package.json')
+
+            // Configure the systemd service with the main script and port number
+            var serviceConfiguration = "[Unit]\n" +
+                                    "Description=" + appName + "\n" +
+                                    "After=network.target\n\n" +
+                                    "[Service]\n" +
+                                    "ExecStart=" + defaults.nodeExec + " " + mainApplication + "\n" +
+                                    "Restart=always\n" +
+                                    "User=nobody\n" +
+                                    "Group=nobody\n" +
+                                    "Environment=PATH=/usr/bin:/usr/local/bin\n" +
+                                    "Environment=NODE_ENV=production\n" +
+                                    "Environment=YOURNODE_PORT=" + applicationPort + "\n" +
+                                    "WorkingDirectory=/home/app1\n\n" +
+                                    "[Install]\n" +
+                                    "WantedBy=multi-user.target\n";
+
+            fs.writeFileSync(defaults.servicePath + appName + '.service', hostConfiguration);
+            console.log('[OK] Create service configuration');
+
+            // Reload systemd
+            helper.systemdHelper(['daemon-reload'], 'Reload systemd services list.');
+
+            // Run npm install for dependencies
+            if (typeof jsonContent.dependencies !== 'undefined') helper.npmInstall();
+        }
+        else {
+            console.log('[Error] No package.json found. Nothing will be done.');
+            process.exit(1);
+        }
     },
 
     enable: function (appName, customDomain) {
@@ -96,38 +178,101 @@ var app = {
         // 1. Create symlink on apps-enabled
         // 2. Reload nginx
 
+        console.log('-- Enabling application --');
+        console.log('Application name: ' + appName);
+
+        // Create symlink on apps-enabled
         // TODO: Grab Application's Custom Domain in database and remove customDomain parameter
-        fs.symlinkSync(defaults.proxyAvailable + customDomain + '.conf', defaults.proxyEnabled + customDomain + '.conf');
+        var pathToAvailable = defaults.proxyAvailable + customDomain + '.conf';
+        var pathToEnabled = defaults.proxyEnabled + customDomain + '.conf';
+        if (helper.checkIfExists(pathToEnabled)) {
+            console.log('[Warning] Symlink already exists, creating a new one to be sure.');
+            fs.unlinkSync(pathToEnabled);
+        }
+        fs.symlinkSync(pathToAvailable, pathToEnabled);
         console.log('[OK] Enable application on proxy');
 
+        // Reload nginx
         helper.proxyReload();
     },
 
     disable: function (appName, customDomain) {
         // Workflow:
-        // 1. Remove symlink on apps-enabled
-        // 2. Reload nginx
+        // 1. Stop application if its running
+        // 2. Remove symlink on apps-enabled
+        // 3. Reload nginx
+
+        console.log('-- Disabling application --');
+        console.log('Application name: ' + appName);
+
+        // Stop application if its running
+        app.stop(appName);
+
+        // Remove symlink on apps-enabled
+        // TODO: Grab Application's Custom Domain in database and remove customDomain parameter
+        var pathToEnabled = defaults.proxyEnabled + customDomain + '.conf';
+        if (helper.checkIfExists(pathToEnabled)) {
+            fs.unlinkSync(pathToEnabled);
+            console.log('[OK] Disable application on proxy');
+
+            // Reload nginx
+            helper.proxyReload();
+        }
+        else console.log("[Warning] Symlink doesn't exists. Doing nothing.");
     },
 
-    remove: function (appName) {
+    remove: function (appName, customDomain) {
         // Workflow:
         // 1. Call app.disable(appName)
-        // 2. Remove systemd service
-        // 3. Reload systemd
-        // 4. Free reserved port for this app
-        // 5. Remove files on /home/yournode/
+        // 2. Remove entry from apps-available
+        // 3. Remove systemd service
+        // 4. Reload systemd
+        // 5. Free reserved port for this app
+        // 6. Remove files on /home/yournode/
+
+        console.log('-- Remove application --');
+        console.log('Application name: ' + appName);
+
+        app.disable(appName, customDomain);
+
+        fs.unlinkSync(defaults.proxyAvailable + customDomain + '.conf');
+        console.log('[OK] Remove entry from proxy completely');
+
+        fs.unlinkSync(defaults.servicePath + appName + '.service');
+        console.log('[OK] Remove systemd service');
+
+        helper.systemdHelper(['daemon-reload'], 'Reload systemd services list.');
+        console.log('[OK] Reload systemd');
+
+        // TODO: Free reserved port for this app
+        console.log('[OK] Free reserved port');
+
+        helper.deleteFolderRecursive(defaults.baseApplicationPath + appName);
+        console.log('[OK] Remove app files. App no longer exists.');
     },
 
     start: function (appName) {
         // Workflow:
-        // 1. Run systemctl start appName
-        // 2. Run systemctl enable appName
+        // 1. Run systemctl enable appName
+        // 2. Run systemctl start appName
+
+        console.log('-- Starting application --');
+        console.log('Application name: ' + appName);
+
+        helper.systemdHelper(['enable',appName], 'Enable app init on restart.');
+        helper.systemdHelper(['start',appName], 'Starting application.');
     },
 
     stop: function (appName) {
         // Workflow
         // 1. Run systemctl stop appName
         // 2. Run systemctl disable appName
+
+        console.log('-- Stopping application --');
+        console.log('Application name: ' + appName);
+
+        helper.systemdHelper(['stop',appName], 'Stopping application.');
+        helper.systemdHelper(['disable',appName], 'Disabled app init on restart.');
     }
 
 }
@@ -147,6 +292,7 @@ switch (process.argv[2]) {
         break;
 
     default:
+        // TODO: Help
         console.log('Unknown parameter.');
         break;
 }
