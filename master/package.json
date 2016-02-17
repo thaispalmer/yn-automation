@@ -1,0 +1,14 @@
+{
+  "name": "yn-master",
+  "version": "0.0.1",
+  "description": "YourNode Automation Script for the Master Server",
+  "main": "yn-master.js",
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/yournode/yn-automation.git"
+  },
+  "author": "YourNode",
+  "dependencies": {
+    "mongoose": "^4.4.2"
+  }
+}

@@ -2,23 +2,27 @@
 
 /*
 
-configure <appName> <customDomain>
-update <appName>
-enable <appName>
-disable <appName>
-remove <appName>
-start <appName>
-stop <appName>
+create app <appName> <user> <customDomain>
+update <appId>
+enable <appId>
+disable <appId>
+remove <appId>
+start <appId>
+stop <appId>
 
 */
 
 var fs = require("fs");
 var spawn = require('child_process');
+var MongoClient = require('mongodb').MongoClient;
+var assert = require('assert');
 
 // Automation default values
 var defaults = {
+    mongo: 'mongodb://localhost:27017/yndata',
     baseApplicationPath: '/home/yournode/',
     serverIP: '127.0.0.1',
+    subdomain: '.apps.yourno.de',
     proxyAvailable: '/etc/nginx/apps-available/',
     proxyEnabled: '/etc/nginx/apps-enabled/',
     servicePath: '/etc/systemd/system/yn_',
@@ -71,9 +75,19 @@ var helper = {
     }
 }
 
+// MongoDB functions
+var db = {
+    connection: null,
+    connect: function (callback) {
+        MongoClient.connect(defaults.mongo, function (err, db) {
+            assert.equal(null, err)
+        }
+    }
+}
+
 // Automation application
 var app = {
-    configure: function (appName, customDomain) {
+    configure: function (appName, user, customDomain) {
         // Workflow:
         // 1. Create folder on /home/yournode/
         // 2. Reserve a port number for this app
@@ -84,11 +98,12 @@ var app = {
 
         console.log('-- Configuring new application --');
         console.log('Application name: ' + appName);
-        console.log('Custom domain: ' + customDomain);
+        console.log('User name: ' + user);
+        console.log('Custom domain: ' + (customDomain ? customDomain : 'not configured'));
 
         // Create app folder and reserve it's port.
         // TODO: Sync Application's Path, Ports and Custom Domain in database
-        var applicationPath = defaults.baseApplicationPath + appName;
+        var applicationPath = defaults.baseApplicationPath + user + '/' + appName;
         var applicationPort = 10000; // TODO: Retrieve from the port pool
 
         if (helper.checkIfExists(applicationPath)) {
@@ -101,7 +116,7 @@ var app = {
         // Create entry on apps-available
         var hostConfiguration = "server {\n" +
                                 "    listen 80;\n\n" +
-                                "    server_name " + customDomain + ";\n\n" +
+                                "    server_name " + (user + '-' + appName) + defaults.subdomain + ";\n\n" +
                                 "    location / {\n" +
                                 "        proxy_pass http://"+ defaults.serverIP + ":" + applicationPort + ";\n" +
                                 "        proxy_http_version 1.1;\n" +
@@ -111,7 +126,21 @@ var app = {
                                 "        proxy_cache_bypass $http_upgrade;\n" +
                                 "    }\n" +
                                 "}";
-        fs.writeFileSync(defaults.proxyAvailable + customDomain + '.conf', hostConfiguration);
+        if (customDomain) {
+            var hostConfiguration += "\n\nserver {\n" +
+                                    "    listen 80;\n\n" +
+                                    "    server_name " + customDomain + ";\n\n" +
+                                    "    location / {\n" +
+                                    "        proxy_pass http://"+ defaults.serverIP + ":" + applicationPort + ";\n" +
+                                    "        proxy_http_version 1.1;\n" +
+                                    "        proxy_set_header Upgrade $http_upgrade;\n" +
+                                    "        proxy_set_header Connection 'upgrade';\n" +
+                                    "        proxy_set_header Host $host;\n" +
+                                    "        proxy_cache_bypass $http_upgrade;\n" +
+                                    "    }\n" +
+                                    "}";
+        }
+        fs.writeFileSync(defaults.proxyAvailable + appId + '.conf', hostConfiguration);
         console.log('[OK] Create proxy configuration');
 
         // Create symlink on apps-enabled and reload nginx

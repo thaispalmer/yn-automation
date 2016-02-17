@@ -1,0 +1,13 @@
+{
+  "name": "yn-shard",
+  "version": "0.0.1",
+  "description": "YourNode Automation Script for the Shard Server",
+  "main": "yn-shard.js",
+  "repository": {
+    "type": "git",
+    "url": "https://bitbucket.org/yournode/yn-automation.git"
+  },
+  "author": "YourNode",
+  "dependencies": {
+  }
+}
