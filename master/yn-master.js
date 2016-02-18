@@ -49,7 +49,7 @@ var helpers = {
             app.log('[Error] A problem with the shard ocurred: ' + response.stderr);
             process.error(1);
         }
-    }
+    },
     sortShardsByUsage: function (callback) {
         models.Shard.find({}, function (error, foundShards) {
             if (error) app.dbError(error);
@@ -395,6 +395,63 @@ var app = {
                 }
             });
         },
+        disable: function (app_id) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    fs.unlinkSync(_config.proxy.enabled + foundUser.username + '-' + application.name + '.conf');
+                    helpers.proxyReload();
+                    application.enable = false;
+                    //foundUser.apps.id(app_id).enable = false;
+                    foundUser.save(function (error) {
+                        if (error) app.dbError(error);
+                        else {
+                            app.log('[OK] Application ' + application.name + ' disabled sucessfully');
+                            app.application.stop(app_id);
+                        }
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
+                    process.exit(1);
+                }
+            });
+        },
+        clone: function (app_id, repository) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
+                        helpers.remoteCommand(foundShard.ip, 'yn-shard clone ' + foundUser.username + ' ' + application.name + ' ' + repository);
+                        app.log('[OK] Application ' + application.name + ' cloned sucessfully');
+                        process.exit(0);
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
+                    process.exit(1);
+                }
+            });
+        },
+        pull: function (app_id) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
+                        helpers.remoteCommand(foundShard.ip, 'yn-shard pull ' + foundUser.username + ' ' + application.name);
+                        app.log('[OK] Application ' + application.name + ' files updated sucessfully');
+                        process.exit(0);
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
+                    process.exit(1);
+                }
+            });
+        },
         update: function (app_id) {
             models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
                 if (error) app.dbError(error);
@@ -403,6 +460,40 @@ var app = {
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard update ' + foundUser.username + ' ' + application.name + ' ' + application.port);
                         app.log('[OK] Application ' + application.name + ' settings and dependencies updated sucessfully');
+                        process.exit(0);
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
+                    process.exit(1);
+                }
+            });
+        },
+        start: function (app_id) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
+                        helpers.remoteCommand(foundShard.ip, 'yn-shard start ' + foundUser.username + ' ' + application.name);
+                        app.log('[OK] Application ' + application.name + ' started sucessfully');
+                        process.exit(0);
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
+                    process.exit(1);
+                }
+            });
+        },
+        stop: function (app_id) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
+                        helpers.remoteCommand(foundShard.ip, 'yn-shard stop ' + foundUser.username + ' ' + application.name);
+                        app.log('[OK] Application ' + application.name + ' stopped sucessfully');
                         process.exit(0);
                     });
                 }
@@ -536,6 +627,30 @@ var app = {
                         app.application.setDomain(process.argv[3], process.argv[5]);
                         break;
 
+                    case 'enable':
+                        app.application.enable(process.argv[3]);
+                        break;
+
+                    case 'disable':
+                        app.application.disable(process.argv[3]);
+                        break;
+
+                    case 'clone':
+                        app.application.clone(process.argv[3], process.argv[5]);
+                        break;
+
+                    case 'pull':
+                        app.application.pull(process.argv[3]);
+                        break;
+
+                    case 'update':
+                        app.application.update(process.argv[3]);
+                        break;
+
+                    case 'start':
+                        app.application.update(process.argv[3]);
+                        break;
+
                     default:
                         console.log('Unknown parameter.');
                         process.exit(0);
@@ -586,7 +701,12 @@ var app = {
                 console.log('');
                 console.log('   app <app_id> setDomain <custom_domain> - Configure a custom domain for an application');
                 console.log('   app <app_id> enable - Enable an application');
+                console.log('   app <app_id> disable - Disable an application');
+                console.log('   app <app_id> clone <repository> - Clones application remote repository');
+                console.log('   app <app_id> pull - Pulls application data from repository');
                 console.log('   app <app_id> update - Updates an application service settings and dependencies');
+                console.log('   app <app_id> start - Starts an application');
+                console.log('   app <app_id> stop - Stops an application');
                 console.log('');
                 console.log('   list shards [usage] - Lists shards. Optional: usage');
                 console.log('   list users - Lists users');
