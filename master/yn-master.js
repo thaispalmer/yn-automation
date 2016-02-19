@@ -127,6 +127,11 @@ var helpers = {
                                 "        proxy_set_header Host $host;\n" +
                                 "        proxy_cache_bypass $http_upgrade;\n" +
                                 "    }\n" +
+                                "    error_page 502 /502.html;\n" +
+                                "    location /502.html {\n" +
+                                "        root " + _config.proxy.errorPages + ";\n" +
+                                "        autoindex off;\n" +
+                                "    }\n" +
                                 "}";
         if (custom_domain) {
             hostConfiguration += "\n\nserver {\n" +
@@ -139,6 +144,11 @@ var helpers = {
                                  "        proxy_set_header Connection 'upgrade';\n" +
                                  "        proxy_set_header Host $host;\n" +
                                  "        proxy_cache_bypass $http_upgrade;\n" +
+                                 "    }\n" +
+                                 "    error_page 502 /502.html;\n" +
+                                 "    location /502.html {\n" +
+                                 "        root " + _config.proxy.errorPages + ";\n" +
+                                 "        autoindex off;\n" +
                                  "    }\n" +
                                  "}";
         }
