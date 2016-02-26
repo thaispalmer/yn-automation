@@ -72,7 +72,6 @@ var helpers = {
                 ], function (error, result) {
                     if (error) app.dbError(error);
                     else {
-                        // TODO: Sort shards by usage.
                         for (var i=0; i < foundShards.length; i++) {
                             if (helpers.arraySearch(result, '_id', foundShards[i].name).length === 0) {
                                 result.unshift({
@@ -318,6 +317,7 @@ var app = {
                                             foundUser.apps.push({
                                                 "name": app_name,
                                                 "port": port,
+                                                "repository": "git@bitbucket.org:yournode/yn-helloworld.git",
                                                 "custom_domain": "",
                                                 "created_on": new Date,
                                                 "shard": shardName,
@@ -342,6 +342,41 @@ var app = {
                 }
                 else {
                     app.log('[Error] User not found');
+                    process.exit(1);
+                }
+            });
+        },
+        delete: function (app_id, force) {
+            models.User.findOne({'apps._id': app_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var application = foundUser.apps.id(app_id);
+                    models.Shard.findOne({name: application.shard}, function (error, foundShard) {
+                        if (error) app.dbError(error);
+                        else if (foundShard) {
+                            // TODO: prompts the user for confirmation, ignore if parameter force has been passed.
+                            var app_name = application.name;
+                            fs.unlinkSync(_config.proxy.enabled + foundUser.username + '-' + application.name + '.conf');
+                            fs.unlinkSync(_config.proxy.available + foundUser.username + '-' + application.name + '.conf');
+                            helpers.proxyReload();
+                            helpers.remoteCommand(foundShard.ip, 'yn-shard remove ' + foundUser.username + ' ' + app_name);
+                            application.remove();
+                            foundUser.save(function (error) {
+                                if (error) app.dbError(error);
+                                else {
+                                    app.log('[OK] Application ' + app_name + ' removed sucessfully');
+                                    process.exit(0);
+                                }
+                            });
+                        }
+                        else {
+                            app.log('[Error] Shard not found');
+                            process.exit(1);
+                        }
+                    });
+                }
+                else {
+                    app.log('[Error] Application not found');
                     process.exit(1);
                 }
             });
@@ -389,8 +424,9 @@ var app = {
                     }
                     fs.symlinkSync(pathToAvailable, pathToEnabled);
                     helpers.proxyReload();
+                    // TODO: check if saves new status for application
                     application.enable = true;
-                    //foundUser.apps.id(app_id).enable = true;
+                    //foundUser.apps.id(app_id).enable = true; // try this if doesn't work
                     foundUser.save(function (error) {
                         if (error) app.dbError(error);
                         else {
@@ -412,8 +448,9 @@ var app = {
                     var application = foundUser.apps.id(app_id);
                     fs.unlinkSync(_config.proxy.enabled + foundUser.username + '-' + application.name + '.conf');
                     helpers.proxyReload();
+                    // TODO: check if saves new status for application
                     application.enable = false;
-                    //foundUser.apps.id(app_id).enable = false;
+                    //foundUser.apps.id(app_id).enable = false; // try this if doesn't work
                     foundUser.save(function (error) {
                         if (error) app.dbError(error);
                         else {
@@ -433,6 +470,7 @@ var app = {
                 if (error) app.dbError(error);
                 else if (foundUser) {
                     var application = foundUser.apps.id(app_id);
+                    repository = (typeof repository == 'undefined') ? application.repository : repository;
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard clone ' + foundUser.username + ' ' + application.name + ' ' + repository);
                         app.log('[OK] Application ' + application.name + ' cloned sucessfully');
@@ -586,6 +624,7 @@ var app = {
             "name": String,
             "port": Number,
             "custom_domain": String,
+            "repository": String,
             "created_on": Date,
             "shard": String,
             "plan": String,
@@ -668,6 +707,29 @@ var app = {
                 }
                 break;
 
+            case 'delete':
+                switch (process.argv[3]) {
+                    // TODO: delete user and delete shard.
+
+                    // case 'user':
+                    //     app.user.delete(process.argv[4], process.argv[5]);
+                    //     break;
+
+                    case 'app':
+                        app.application.delete(process.argv[4], process.argv[5]);
+                        break;
+
+                    // case 'shard':
+                    //     app.shard.delete(process.argv[4], process.argv[5]);
+                    //     break;
+
+                    default:
+                        console.log('Unknown parameter.');
+                        process.exit(0);
+                        break;
+                }
+                break;
+
             case 'list':
                 switch (process.argv[3]) {
                     case 'shards':
@@ -712,11 +774,15 @@ var app = {
                 console.log('   app <app_id> setDomain <custom_domain> - Configure a custom domain for an application');
                 console.log('   app <app_id> enable - Enable an application');
                 console.log('   app <app_id> disable - Disable an application');
-                console.log('   app <app_id> clone <repository> - Clones application remote repository');
+                console.log('   app <app_id> clone [<repository>] - Clones application remote repository. Optional: git url');
                 console.log('   app <app_id> pull - Pulls application data from repository');
                 console.log('   app <app_id> update - Updates an application service settings and dependencies');
                 console.log('   app <app_id> start - Starts an application');
                 console.log('   app <app_id> stop - Stops an application');
+                console.log('');
+                // console.log('   delete user <user_id> [force] - Removes an application. Optional: force');
+                console.log('   delete app <app_id> [force] - Removes an application. Optional: force');
+                // console.log('   delete shard <shard_name> [force] - Removes an application. Optional: force');
                 console.log('');
                 console.log('   list shards [usage] - Lists shards. Optional: usage');
                 console.log('   list users - Lists users');

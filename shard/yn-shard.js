@@ -33,11 +33,11 @@ var helpers = {
         });
     },
     deleteFolderRecursive: function (path) {
-        if (helper.checkIfExists(path)) {
+        if (helpers.checkIfExists(path)) {
             fs.readdirSync(path).forEach(function(file,index) {
                 var curPath = path + "/" + file;
                 if (fs.lstatSync(curPath).isDirectory()) {
-                    helper.deleteFolderRecursive(curPath);
+                    helpers.deleteFolderRecursive(curPath);
                 } else {
                     fs.unlinkSync(curPath);
                 }
@@ -107,7 +107,7 @@ var app = {
         clone: function (username, app_name, repository) {
             var applicationPath = _config.applicationPath + username + '/' + app_name;
             if (helpers.checkIfExists(applicationPath)) {
-                if (helper.deleteFolderRecursive(applicationPath)) app.log('[OK] Removing application files');
+                if (helpers.deleteFolderRecursive(applicationPath)) app.log('[OK] Removing application files');
                 else {
                     app.log('[Error] Could not remove application files.');
                     process.exit(1);
@@ -138,7 +138,7 @@ var app = {
             var packagePath = applicationPath + 'package.json';
 
             // Read package.json to see the main script to run
-            if (helper.checkIfExists(packagePath)) {
+            if (helpers.checkIfExists(packagePath)) {
                 var contents = fs.readFileSync(packagePath);
                 var jsonContent = JSON.parse(contents);
                 var mainApplication = applicationPath + jsonContent.main;
@@ -164,10 +164,10 @@ var app = {
                 app.log('[OK] Created service configuration');
 
                 // Reload systemd
-                helper.systemdHelper(['daemon-reload'], 'Reload systemd services list.');
+                helpers.systemdHelper(['daemon-reload'], 'Reload systemd services list.');
 
                 // Run npm install for dependencies
-                if (typeof jsonContent.dependencies !== 'undefined') helper.npmInstall();
+                if (typeof jsonContent.dependencies !== 'undefined') helpers.npmInstall();
 
                 process.exit(0);
             }
@@ -180,8 +180,8 @@ var app = {
             var applicationPath = _config.applicationPath + username + '/' + app_name;
             if (helpers.checkIfExists(applicationPath)) {
                 var appService = 'yn_' + username + '-' + app_name;
-                helper.systemdHelper(['enable',appService], 'Enable app init on restart.');
-                helper.systemdHelper(['start',appService], 'Starting application.');
+                helpers.systemdHelper(['enable',appService], 'Enable app init on restart.');
+                helpers.systemdHelper(['start',appService], 'Starting application.');
                 process.exit(0);
             }
             else {
@@ -193,8 +193,23 @@ var app = {
             var applicationPath = _config.applicationPath + username + '/' + app_name;
             if (helpers.checkIfExists(applicationPath)) {
                 var appService = 'yn_' + username + '-' + app_name;
-                helper.systemdHelper(['stop',appService], 'Stopping application.');
-                helper.systemdHelper(['disable',appService], 'Disabled app init on restart.');
+                helpers.systemdHelper(['stop',appService], 'Stopping application.');
+                helpers.systemdHelper(['disable',appService], 'Disabled app init on restart.');
+                process.exit(0);
+            }
+            else {
+                app.log('[Error] Application not found.');
+                process.exit(1);
+            }
+        }
+        remove: function (username, app_name) {
+            var applicationPath = _config.applicationPath + username + '/' + app_name;
+            if (helpers.checkIfExists(applicationPath)) {
+                var appService = 'yn_' + username + '-' + app_name;
+                helpers.systemdHelper(['stop',appService], 'Stopping application.');
+                helpers.systemdHelper(['disable',appService], 'Disabled app init on restart.');
+                if (helpers.deleteFolderRecursive(applicationPath)) app.log('[OK] Removing application files');
+                app.log('[OK] Application removed');
                 process.exit(0);
             }
             else {
@@ -233,6 +248,10 @@ var app = {
                 app.application.stop(process.argv[3], process.argv[4]);
                 break;
 
+            case 'remove':
+                app.application.remove(process.argv[3], process.argv[4]);
+                break;
+
             default:
                 // TODO: Help
                 console.log("__     __              _   _           _       ");
@@ -250,6 +269,7 @@ var app = {
                 console.log('   update <username> <app_name> <port> - Update application entry on system');
                 console.log('   start <username> <app_name> - Starts an application');
                 console.log('   stop <username> <app_name> - Stops an application');
+                console.log('   remove <username> <app_name> - Removes an application from the shard');
                 console.log('');
                 process.exit(0);
                 break;
