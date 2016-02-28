@@ -100,7 +100,7 @@ var helpers = {
     },
     generateKeys: function (username) {
         var response = spawn.spawnSync('ssh-keygen', ['-t', 'rsa', '-C', 'YourNode deploy key for ' + username, '-N', '', '-f', _config.userKeys + username]);
-        if (response.status === 0) app.log('[OK] Deploy Keys created sucessfully for ' + username);
+        if (response.status === 0) app.log('[OK] Deploy Keys created successfully for ' + username);
         else {
             app.log('[Error] A problem while generating deploy keys ocurred: ' + response.stderr);
             process.exit(1);
@@ -108,7 +108,7 @@ var helpers = {
     },
     transferKeys: function (username, ip) {
         var response = spawn.spawnSync('scp', [_config.userKeys + username + '*', 'yournode@' + ip + ':' + _config.userKeys]);
-        if (response.status === 0) app.log('[OK] Deploy Keys transfered sucessfully for ' + username + ' to ' + ip);
+        if (response.status === 0) app.log('[OK] Deploy Keys transfered successfully for ' + username + ' to ' + ip);
         else {
             app.log('[Error] A problem while transfering deploy keys ocurred: ' + response.stderr);
             process.exit(1);
@@ -191,7 +191,7 @@ var app = {
                     newShard.save(function (error, result) {
                         if (error) app.dbError(error);
                         else {
-                            app.log('[OK] Shard ' + name + ' created sucessfully');
+                            app.log('[OK] Shard ' + name + ' created successfully');
                             process.exit(0);
                         }
                     });
@@ -270,6 +270,50 @@ var app = {
                 }
             });
         },
+        delete: function (user_id, force) {
+            models.User.findOne({'_id': user_id}, function (error, foundUser) {
+                if (error) app.dbError(error);
+                else if (foundUser) {
+                    var appsPerShard = {};
+                    for (var i=0; i < foundUser.apps.length; i++) {
+                        if (typeof appsPerShard[foundUser.apps[i].shard] == 'undefined') appsPerShard[foundUser.apps[i].shard] = [];
+                        appsPerShard[foundUser.apps[i].shard].push(foundUser.apps[i].name);
+                    }
+                    var shards = Object.keys(appsPerShard);
+                    var username = foundUser.username;
+                    model.Shard.find({'name': { $in: shards }}, function (error, foundShards) {
+                        if (error) app.dbError(error);
+                        else if (foundShards) {
+                            for (var i=0; i < foundShards.length; i++) {
+                                var actualShard = foundShards[i].name;
+                                for (var j=0; j < appsPerShard[actualShard].length; j++) {
+                                    fs.unlinkSync(_config.proxy.enabled + username + '-' + appsPerShard[actualShard][j] + '.conf');
+                                    fs.unlinkSync(_config.proxy.available + username + '-' + appsPerShard[actualShard][j] + '.conf');
+                                    helpers.remoteCommand(foundShards[i].ip, 'yn-shard remove ' + username + ' ' + appsPerShard[actualShard][j]);
+                                    app.log('[OK] Removed application ' + appsPerShard[actualShard][j]);
+                                }
+                            }
+                            foundUser.remove(function (error) {
+                                if (error) app.dbError(error);
+                                else {
+                                    helpers.proxyReload();
+                                    app.log('[OK] User ' + username + ' removed successfully.');
+                                    process.exit(0);
+                                }
+                            });
+                        }
+                        else {
+                            app.log('[Error] No shards found');
+                            process.exit(1);
+                        }
+                    });
+                }
+                else {
+                    app.log('[Error] User not found');
+                    process.exit(1);
+                }
+            });
+        },
         list: function () {
             console.log('Listing Users:');
             console.log('');
@@ -329,7 +373,7 @@ var app = {
                                             foundUser.save(function (error) {
                                                 if (error) app.dbError(error);
                                                 else {
-                                                    app.log('[OK] Application ' + app_name + ' created sucessfully');
+                                                    app.log('[OK] Application ' + app_name + ' created successfully');
                                                     process.exit(0);
                                                 }
                                             });
@@ -364,7 +408,7 @@ var app = {
                             foundUser.save(function (error) {
                                 if (error) app.dbError(error);
                                 else {
-                                    app.log('[OK] Application ' + app_name + ' removed sucessfully');
+                                    app.log('[OK] Application ' + app_name + ' removed successfully');
                                     process.exit(0);
                                 }
                             });
@@ -394,7 +438,7 @@ var app = {
                             foundUser.save(function (error) {
                                 if (error) app.dbError(error);
                                 else {
-                                    app.log('[OK] Custom domain for ' + application.name + ' configured sucessfully');
+                                    app.log('[OK] Custom domain for ' + application.name + ' configured successfully');
                                     process.exit(0);
                                 }
                             });
@@ -430,7 +474,7 @@ var app = {
                     foundUser.save(function (error) {
                         if (error) app.dbError(error);
                         else {
-                            app.log('[OK] Application ' + application.name + ' enabled sucessfully');
+                            app.log('[OK] Application ' + application.name + ' enabled successfully');
                             process.exit(0);
                         }
                     });
@@ -454,7 +498,7 @@ var app = {
                     foundUser.save(function (error) {
                         if (error) app.dbError(error);
                         else {
-                            app.log('[OK] Application ' + application.name + ' disabled sucessfully');
+                            app.log('[OK] Application ' + application.name + ' disabled successfully');
                             app.application.stop(app_id);
                         }
                     });
@@ -473,7 +517,7 @@ var app = {
                     repository = (typeof repository == 'undefined') ? application.repository : repository;
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard clone ' + foundUser.username + ' ' + application.name + ' ' + repository);
-                        app.log('[OK] Application ' + application.name + ' cloned sucessfully');
+                        app.log('[OK] Application ' + application.name + ' cloned successfully');
                         process.exit(0);
                     });
                 }
@@ -490,7 +534,7 @@ var app = {
                     var application = foundUser.apps.id(app_id);
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard pull ' + foundUser.username + ' ' + application.name);
-                        app.log('[OK] Application ' + application.name + ' files updated sucessfully');
+                        app.log('[OK] Application ' + application.name + ' files updated successfully');
                         process.exit(0);
                     });
                 }
@@ -507,7 +551,7 @@ var app = {
                     var application = foundUser.apps.id(app_id);
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard update ' + foundUser.username + ' ' + application.name + ' ' + application.port);
-                        app.log('[OK] Application ' + application.name + ' settings and dependencies updated sucessfully');
+                        app.log('[OK] Application ' + application.name + ' settings and dependencies updated successfully');
                         process.exit(0);
                     });
                 }
@@ -524,7 +568,7 @@ var app = {
                     var application = foundUser.apps.id(app_id);
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard start ' + foundUser.username + ' ' + application.name);
-                        app.log('[OK] Application ' + application.name + ' started sucessfully');
+                        app.log('[OK] Application ' + application.name + ' started successfully');
                         process.exit(0);
                     });
                 }
@@ -541,7 +585,7 @@ var app = {
                     var application = foundUser.apps.id(app_id);
                     models.Shard.findOne({'name': application.shard}, function (error, foundShard) {
                         helpers.remoteCommand(foundShard.ip, 'yn-shard stop ' + foundUser.username + ' ' + application.name);
-                        app.log('[OK] Application ' + application.name + ' stopped sucessfully');
+                        app.log('[OK] Application ' + application.name + ' stopped successfully');
                         process.exit(0);
                     });
                 }
@@ -709,16 +753,15 @@ var app = {
 
             case 'delete':
                 switch (process.argv[3]) {
-                    // TODO: delete user and delete shard.
-
-                    // case 'user':
-                    //     app.user.delete(process.argv[4], process.argv[5]);
-                    //     break;
+                    case 'user':
+                        app.user.delete(process.argv[4], process.argv[5]);
+                        break;
 
                     case 'app':
                         app.application.delete(process.argv[4], process.argv[5]);
                         break;
 
+                    // TODO: delete shard.
                     // case 'shard':
                     //     app.shard.delete(process.argv[4], process.argv[5]);
                     //     break;
@@ -780,7 +823,7 @@ var app = {
                 console.log('   app <app_id> start - Starts an application');
                 console.log('   app <app_id> stop - Stops an application');
                 console.log('');
-                // console.log('   delete user <user_id> [force] - Removes an application. Optional: force');
+                console.log('   delete user <user_id> [force] - Removes an application. Optional: force');
                 console.log('   delete app <app_id> [force] - Removes an application. Optional: force');
                 // console.log('   delete shard <shard_name> [force] - Removes an application. Optional: force');
                 console.log('');

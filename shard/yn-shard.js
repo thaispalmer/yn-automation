@@ -209,6 +209,12 @@ var app = {
                 helpers.systemdHelper(['stop',appService], 'Stopping application.');
                 helpers.systemdHelper(['disable',appService], 'Disabled app init on restart.');
                 if (helpers.deleteFolderRecursive(applicationPath)) app.log('[OK] Removing application files');
+                var userFiles = fs.readdirSync(_config.applicationPath + username);
+                if (userFiles.length == 0) {
+                    if (helpers.deleteFolderRecursive(_config.applicationPath + username)) {
+                        app.log('[OK] Removing user empty folder');
+                    }
+                }
                 app.log('[OK] Application removed');
                 process.exit(0);
             }
