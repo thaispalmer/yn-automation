@@ -5,7 +5,7 @@
   "main": "yn-automation.js",
   "repository": {
     "type": "git",
-    "url": "https://bitbucket.org/yournode/yn-automation.git"
+    "url": "https://github.com/thoso/yn-automation.git"
   },
   "author": "YourNode",
   "dependencies": {
